@@ -1,0 +1,159 @@
+name: Déployer le proto du designer
+
+# Publie le fork du designer sur proto.vitrinedemocratique.com (Pages
+# `vitrine-democratique-proto`, compte capp, derrière Cloudflare Access).
+#
+# MODÈLE « PULL ». Le designer ne détient AUCUN jeton Cloudflare : un jeton
+# Pages couvre tous les projets Pages du compte, prod comprise. C'est donc ce
+# dépôt-ci qui va chercher son code et le publie. Trois tâches, trois niveaux
+# de confiance :
+#
+#   detect  — n'exécute aucune ligne de son code. Compare la tête de sa
+#             branche au commit du dernier déploiement proto.
+#   build   — SON code tourne ici. Aucun jeton Cloudflare, GITHUB_TOKEN sans
+#             aucun droit, aucun cache. Seul secret : PROTO_API_KEY, une clé
+#             d'API en LECTURE SEULE (liste explicite de jeux, sans `*` ni
+#             `sync` — `*` passe le contrôle `sync` dans workers/api/src/auth.ts).
+#   deploy  — détient le jeton Pages, mais n'exécute RIEN de son code : pas de
+#             checkout, répertoire vide, wrangler épinglé, `_worker.js`,
+#             `_routes.json` et `functions` retirés de l'artefact.
+#
+# Cible : variables du dépôt PROTO_REPO (« compte/vitrine-showcase.github.io »)
+# et PROTO_BRANCH.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebâtir même si ce commit est déjà publié"
+        type: boolean
+        default: false
+
+concurrency:
+  group: proto-deploy
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  PROJECT: vitrine-democratique-proto
+  WRANGLER: wrangler@4.149.0
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    environment: deploy
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.head.outputs.sha }}
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      - name: Tête de la branche du designer
+        id: head
+        env:
+          REPO: ${{ vars.PROTO_REPO }}
+          BRANCH: ${{ vars.PROTO_BRANCH }}
+        run: |
+          set -euo pipefail
+          sha=$(git ls-remote "https://github.com/${REPO}.git" "refs/heads/${BRANCH}" | cut -f1)
+          [ -n "$sha" ] || { echo "::error::Branche ${BRANCH} introuvable sur ${REPO}"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Tête : ${REPO}@${BRANCH} = $sha"
+
+      - name: Déjà publié ?
+        id: compare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          SHA: ${{ steps.head.outputs.sha }}
+          FORCE: ${{ inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          last=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/pages/projects/$PROJECT/deployments?env=production&per_page=1" \
+            | jq -r '.result[0].deployment_trigger.metadata.commit_hash // ""')
+          echo "Dernier déploiement : ${last:-aucun}"
+          if [ "$FORCE" = "true" ] || [ "$last" != "$SHA" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Rien de neuf."
+          fi
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment: build
+    timeout-minutes: 45
+    permissions: {}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.PROTO_REPO }}
+          ref: ${{ needs.detect.outputs.sha }}
+          persist-credentials: false
+
+      # Volontairement SANS `cache: npm` : un cache écrit ici serait relu par
+      # les exécutions suivantes de ce dépôt.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BASE_PATH: ""
+          # `dev` et non `proto` : les gardes de parties.ts et promessesNeuves.ts
+          # lèvent en CI pour toute autre valeur, et seul `prod` pose la balise
+          # d'analytique.
+          NEXT_PUBLIC_SITE_ENV: dev
+          NEXT_PUBLIC_SITE_ORIGIN: https://proto.vitrinedemocratique.com
+          # Mêmes données que dev et prod : l'API sur Neon.
+          VITRINE_DATA_SOURCE: api
+          VITRINE_API_KEY: ${{ secrets.PROTO_API_KEY }}
+          # PAS d'OPENAI_API_KEY : ensure_art ne génère donc jamais d'image ici.
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: out/
+          retention-days: 3
+          if-no-files-found: error
+
+  deploy:
+    needs: [detect, build]
+    runs-on: ubuntu-latest
+    environment: deploy
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: site
+          path: ${{ runner.temp }}/publier/site
+
+      - name: Publier sur Pages (proto)
+        working-directory: ${{ runner.temp }}/publier
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          SHA: ${{ needs.detect.outputs.sha }}
+          REPO: ${{ vars.PROTO_REPO }}
+        run: |
+          set -euo pipefail
+          # Rien d'exécutable ne doit partir avec l'artefact.
+          rm -f site/_worker.js site/_routes.json
+          rm -rf site/functions
+          ls -A
+          npx --yes "$WRANGLER" pages deploy site \
+            --project-name "$PROJECT" \
+            --branch main \
+            --commit-hash "$SHA" \
+            --commit-message "proto ${REPO}@${SHA:0:8}" \
+            --commit-dirty=true

@@ -66,6 +66,7 @@ ou retirer une personne se fait dans les **deux** apps.
 
 ## Fin du projet
 
-Révoquer la clé `proto-designer` (api.vitrinedemocratique.com/admin), supprimer le
+Révoquer la clé `proto-designer` (api.vitrinedemocratique.com/admin ; dans `api.keys`,
+id `94c34784-8bc2-40c2-9e75-9d629bb0f94a`), supprimer le
 jeton Pages, désactiver le workflow. GitHub suspend aussi de lui-même les crons d'un
 dépôt public sans commit depuis 60 jours.

@@ -5,15 +5,22 @@ Cloudflare Access. Les données sont les mêmes que sur dev et prod : l'API sur 
 
 ## Pour le designer
 
-1. Forkez [`ellipse-science/vitrine-showcase.github.io`](https://github.com/ellipse-science/vitrine-showcase.github.io).
-2. Travaillez sur la branche convenue (par défaut `proto`) de votre fork. Vous et votre
-   agent y avez tous les droits.
-3. Poussez. Dans les **~10 à 20 minutes**, proto affiche votre dernier commit
-   (relève toutes les 10 min, puis ~10 min de build).
-4. Pour récupérer le travail de l'équipe : bouton **Sync fork** sur GitHub, ou
-   `gh repo sync <vous>/vitrine-showcase.github.io -b develop`, puis fusionnez `develop`
-   dans votre branche.
-5. Quand un morceau est prêt : **PR de votre fork vers `develop`**, revue par l'équipe.
+Votre dépôt : **[`clessn/proto_vitrine`](https://github.com/clessn/proto_vitrine)**, un fork
+de [`ellipse-science/vitrine-showcase.github.io`](https://github.com/ellipse-science/vitrine-showcase.github.io)
+appartenant à l'équipe. Vous y avez le droit d'écriture (acceptez l'invitation GitHub).
+
+1. `gh repo clone clessn/proto_vitrine` — la branche par défaut est **`proto`**.
+2. Travaillez sur `proto` (ou des branches que vous y fusionnez). Vous et votre agent
+   pouvez pousser, réécrire, tout casser : rien n'atteint dev ni prod.
+3. Poussez sur `proto`. Dans les **~10 à 20 minutes**, proto.vitrinedemocratique.com
+   affiche votre dernier commit (relève toutes les 10 min, puis ~10 min de build).
+   Connexion par courriel via Cloudflare Access.
+4. Pour récupérer le travail de l'équipe : `gh repo sync clessn/proto_vitrine -b develop`,
+   puis fusionnez `develop` dans `proto`.
+5. Quand un morceau est prêt : **PR de `clessn/proto_vitrine` vers
+   `ellipse-science/vitrine-showcase.github.io:develop`**, revue par l'équipe.
+
+Les GitHub Actions sont **désactivées** sur `proto_vitrine` : le build se fait ici.
 
 Pour itérer vite, rien ne remplace `npm run dev` en local ; proto sert à montrer et à
 faire valider.
@@ -44,8 +51,8 @@ synchro et l'écriture de l'illustration dans R2.
 
 | Où | Nom | Valeur |
 |---|---|---|
-| Variable | `PROTO_REPO` | `<compte>/vitrine-showcase.github.io` |
-| Variable | `PROTO_BRANCH` | branche publiée |
+| Variable | `PROTO_REPO` | `clessn/proto_vitrine` |
+| Variable | `PROTO_BRANCH` | `proto` |
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | compte `capp` |
 | Environnement `deploy` (branche `main` seulement) | `CLOUDFLARE_API_TOKEN` | jeton **Pages Write** dédié |
 | Environnement `build` (branche `main` seulement) | `PROTO_API_KEY` | clé `proto-designer` |
